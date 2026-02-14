@@ -1,0 +1,93 @@
+
+CONTEXT:
+We are building a registration system for a college event called "Viyugam".
+Stack: React (Next.js/Vite), Tailwind, Google Apps Script, Google Sheets.
+
+GOAL:
+Ensure the React frontend correctly sends registration data to the Google Apps Script, which then saves it to a Google Sheet.
+
+CURRENT WORKFLOW:
+1. User opens the application and selects an event from the `Events` list.
+2. The `EventRegistrationModal` opens.
+3. User fills in details for the Team Leader and team members.
+4. User clicks "Submit".
+5. The `handleSubmit` function collects the form data.
+6. The data is sent via `fetch` (POST request) to the Google Apps Script URL.
+7. The Google Apps Script receives the request (`doPost`), parses the data, and appends a row to the "Registrations" sheet in the connected Google Spreadsheet.
+
+COMPONENTS & CODE:
+
+1. Frontend Component (`components/EventRegistrationModal.tsx`)
+   - Handles the form UI and state.
+   - Currently constructs a payload to send to the script.
+   - **Current Logic**: It constructs a FLATTENED object (e.g., "TL Name", "Member 2 Name").
+   
+   relevant code snippet from `EventRegistrationModal.tsx`:
+   ```typescript
+      // Construct flattened payload matching Google Sheet columns
+      const payload: any = {
+        'Timestamp': new Date().toISOString(),
+        'Event Name': formData.eventName,
+        'TL Name': formData.teamMembers[0].name,
+        // ... (adds other fields with keys like "TL Email", "Member 2 Name")
+      }
+      
+      const response = await fetch(
+        event?.googleSheetScriptUrl || '',
+        {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+        }
+      )
+   ```
+
+2. Google Apps Script (`app.txt`)
+   - Receives the POST request.
+   - Parses the JSON body.
+   - Maps the data to specific columns in the spreadsheet.
+   - **Current Logic**: It expects a STRUCTURED object with `eventName` and `teamMembers` array.
+   
+   relevant code snippet from `app.txt`:
+   ```javascript
+    var eventName = data.eventName || "";
+    var teamMembers = data.teamMembers || [];
+
+    // ... inside the loop ...
+    function getMember(index) {
+        if (teamMembers && teamMembers[index]) { return teamMembers[index]; }
+        return {};
+    }
+   ```
+
+ISSUE - DATA MISMATCH:
+The frontend is complying with an older requirement (flat object), while the backend script has been updated to handle a cleaner, structured JSON object. 
+- **Result**: If run as is, the script will receive the data but `data.eventName` will be undefined and `data.teamMembers` will be empty, resulting in empty rows in the sheet.
+
+REQUIRED RESOLUTION:
+To make this work "correctly", the frontend `EventRegistrationModal.tsx` must be updated to send the payload in the format the script expects.
+
+**Correct Payload Structure:**
+```json
+{
+  "eventName": "Insight Arena",
+  "teamMembers": [
+    { "name": "Alice", "email": "...", "phone": "...", "collegeName": "...", "year": "...", "department": "..." },
+    { "name": "Bob", "email": "...", ... }
+  ]
+}
+```
+
+The script will then automatically flatten this into the row:
+[Timestamp, EventName, TL_Name, TL_Email, ..., Member2_Name, ...]
+
+GOOGLE APPS SCRIPT URL:
+The current URL being used is: `https://script.google.com/macros/s/AKfycbx8pxGgO5ErgkXXg3myukf85ZLhCsw44ed21zi1PgQ56SiVhXAOHm4N7ZBeN9G97CA-UQ/exec`
+
+SHEET HEADERS:
+The script automatically ensures these headers exist:
+"Timestamp", "Event Name", "TL Name", "TL Email", "TL Phone", "TL College", "TL Year", "TL Dept",
+"Member 2 Name", "Member 2 Email", "Member 2 Phone", "Member 2 College", "Member 2 Year", "Member 2 Dept",
+"Member 3 Name", "Member 3 Email", "Member 3 Phone", "Member 3 College", "Member 3 Year", "Member 3 Dept",
+"Member 4 Name", "Member 4 Email", "Member 4 Phone", "Member 4 College", "Member 4 Year", "Member 4 Dept"
